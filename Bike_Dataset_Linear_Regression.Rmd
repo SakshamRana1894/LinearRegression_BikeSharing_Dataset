@@ -1,0 +1,197 @@
+---
+title: "Linear Regression on Bike Sharing Dataset"
+author: "Saksham Rana"
+date: "April 14, 2019"
+output:
+  html_document:
+    number_sections: yes
+    theme: united
+    toc: yes
+---
+********
+
+# Introduction
+The purpose of this exercise is to study the validation of assumptions of simple linear regression and draw conclusions as to what all parameters do we need to look at in order to decide whether linear regression is the right way to go.
+
+So we will be observing a dataset in which there is violation of assumptions and reporting our observations based data analysis and residual analysis.
+
+# Importing Libraries
+```{r, message=FALSE, warning=FALSE}
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(plotly)
+library(caTools)
+```
+
+# Importing the Data
+```{r, message=FALSE, warning=FALSE, echo = FALSE}
+setwd("D:/Material/Simple_Linear_Regression/Simple_Linear_Regression/Bike-Sharing-Dataset")
+```
+```{r, message=FALSE, warning=FALSE}
+bike_data <- read_csv("hour.csv", progress = show_progress())
+```
+# Data Exploration
+## Some observations of Data
+```{r}
+head(bike_data)
+```
+## Check for any NA values
+```{r}
+sapply(bike_data, function(x)(sum(is.na(x))))
+```
+
+## Check for normality in response and predictor variables
+```{r, warning=FALSE, fig.width=10}
+ggplot(bike_data, aes(x = cnt)) +
+  geom_histogram(position = "identity", color = "black", fill = "cyan", alpha = 0.3, binwidth = 30) + 
+  geom_vline(aes(xintercept = mean(cnt)), colour = "red", linetype = "dotted", size = 1)
+```
+It is observed that the data is normally distributed and validates the assumption of regression. However the data seems to be skewed towards large distribution tending towards the left of mean.
+
+```{r, warning=FALSE, fig.width=10}
+ggplot(bike_data, aes(x = temp)) + 
+  geom_histogram(color = "black", fill = "red", alpha = 0.3, binwidth = 0.05) + 
+  geom_vline(aes(xintercept = mean(temp), colour = "red", size = 1))
+```
+It is observed that distribution is skewed implying that assumption of linear regression is not validated; this may result in a faulty/inaccurate model.
+
+## Check correlation among variables
+The Pearson coefficient indicates that there is strong linear relationship between the predictor and response variable, which is a desired to design a linear model. 
+
+The correlation between "bikes rented" and "temperature" is `r cor(bike_data$temp, bike_data$cnt)`.
+
+It is observed that there is little positive linear relationship between "cnt" and "temp". We will observe scatter plot will have high heteroskedasticity in data.
+
+```{r, fig.width = 10}
+ggplot(bike_data, aes(x = temp, y = cnt)) + 
+  geom_point(aes(color = temp), alpha = 0.4) + 
+  scale_color_gradient(low = "#88d8b0", high = "#ff6f69") + 
+  ggtitle(label = "cnt vs temp")
+```
+It is observed that as temperature increases the number of bikes rented increases, however relation
+is not strong. Also looking at the spreading nature of scatter plot we can say that there is heteroskedasticity in data. Thus linear regression will not produce an accurate model.
+
+Now let us check some more scatter plots to see if we identify a variable that shows high linearity with response variable.
+
+```{r, fig.width = 10}
+ggplot(bike_data, aes(x = hum, y =  cnt)) + 
+  geom_point(aes(color = hum), alpha = 0.4) + 
+  scale_color_gradient(low = "#88d8b0", high = "#ff6f69") +
+  ggtitle(label = "cnt vs hum")
+```
+Here also spread is high and there is no signs if linear relationship. Also Pearson Coefficient is `r cor(bike_data$hum, bike_data$cnt)`. This shows there is negative weak linear relation between humidity and count; indicationg linear regression is not the right way to go for prediction.
+
+Let us now check how rentals are affected throughout the year.
+```{r, echo = F, message=F, warning=F }
+bike_data$dteday <- as.POSIXct(bike_data$dteday)
+```
+```{r, fig.width=10}
+ggplot(bike_data, aes(x = dteday, y = cnt)) + 
+  geom_point(aes(color = temp), alpha = 0.4) + 
+  scale_color_gradient(low = "#88d8b0", high = "#ff6f69")
+```
+It is observed that bike rentals increase during summers as compared. Also overall the bike rentals have increased.
+
+Let us now see how rental numbers are impacted if we analyze working days or non working days solely.
+```{r, fig.width=10}
+ggplot(bike_data[bike_data$workingday == 1, ], aes(x = hr, y = cnt)) + 
+  geom_point(aes(color = temp), alpha = 0.4, position = position_jitter(w = 1, h = 0)) + 
+  ggtitle(label = "Bikes Rented on Working Days")
+```
+It is observed that bike rentals on working days tend to peak during 8A.M. and 5 P.M.. This maybe as people hire bikes for exercise purposes or transit to office.
+
+```{r, fig.width=10}
+ggplot(bike_data[bike_data$workingday == 0, ], aes(x = hr, y = cnt)) + 
+  geom_point(aes(color = temp), position = position_jitter(w = 1, h = 0)) + 
+  ggtitle(label = "Bikes Rented on Non Working Days")
+```
+It is observed that bike rental activity escalates during noon.
+
+Based on our rudimentary analysis of data we can say none of the variables show high linear relationship with bikes rented. 
+Let us however build a model taking "cnt" and "temp" to see how we can later analyse the residuals to conclude that the model is not accurate.
+
+# Build Linear Model for Bikes Rented
+## Split to trainging and test set
+
+We split the data into training and test set in order to build our test how accurate our model predictions are with respect to actual values in the test set. The model is trained on training data.
+```{r}
+training_set <- subset(bike_data, as.numeric(format(as.Date(bike_data$dteday), "%d")) <= 20) 
+test_set <- subset(bike_data, as.numeric(format(as.Date(bike_data$dteday), "%d")) > 20) 
+```
+
+## Linear Model
+```{r}
+model <- lm(cnt ~ temp, training_set)
+summary(model)
+```
+
+From the summary we can see that slope is `r model$coefficients[2]` and intercept is `r model$coefficients[1]`.
+
+```{r}
+y_pred <- predict(model, newdata = test_set)
+```
+
+## Graphical representation of Actual Data and Predicted Data
+
+Below is the graph between actual values and predicted values for training data
+```{r, fig.width = 10}
+ggplot() +
+  geom_point(aes(x = training_set$temp, y = training_set$cnt),
+             colour = 'red') +
+  geom_line(aes(x = training_set$temp, y = predict(model, newdata = training_set)),
+            colour = 'blue') +
+  ggtitle('Bikes Rented vs Temperature (Training set)') +
+  xlab('Bikes Rented') +
+  ylab('Temperature')
+```
+
+Below is the graph between actual values and predicted values for test data
+```{r, fig.width = 10}
+ggplot() +
+  geom_point(aes(x = test_set$temp, y = test_set$cnt),
+             colour = 'red') +
+  geom_line(aes(x = training_set$temp, y = predict(model, newdata = training_set)),
+            colour = 'blue') +
+  ggtitle('Bikes Rented vs Temperature (Test set)') +
+  xlab('Bikes Rented') +
+  ylab('Temperature')
+
+```
+
+From the above two graphs we can see that the model does not accurately predict values for given temperature.This means that the most of the variation in "Bikes Rented" cannot be explained with variation in "Temperature". This is also evident from the $R^2 = 0.1544$.
+
+A low value of coefficient of determination indicates that bad fit and the model is not accurate.
+
+## Residual Plots
+Another way to gauge the goodness of fit for the model is to look at the residue plots. Let us look at some residue plots to justify that in this case selecting a linear model is a bad choice.
+
+Residual plot should show constant variance/spread. Y axis = residue; X axis = temp there should be random spread in the graph that indicated constant variance.
+
+```{r, fig.width = 10}
+ggplot() + 
+  geom_point(data = training_set, aes(x = training_set$temp, y = resid(model)), colour = "red") + 
+  geom_hline(aes(yintercept = mean(resid(model))), linetype = "dashed", size = 1) + 
+  ggtitle(label = "Residual Plot for Training Data") + 
+  xlab("temp") + ylab("residue")
+```
+
+It is observed that the residuals increase as temperture increases. This means that variance in 
+predicted values and actual values increases. This indicates that the model does not have constant  variance. Also this phenomenon is known as heteroskedasticity.
+
+Below graph of residuals shows skewness in normal distribution
+```{r, fig.width = 10}
+ggplot() + 
+  geom_histogram(aes(x = model$residuals), color = "red")
+```
+
+Let us look at some generic graphs for residual plots to check distribution and errors.
+```{r, fig.width=10}
+plot(model)
+```
+
+# Conclusion
+* Temperature has weak linear relationship with bikes rented.
+* Coefficient of Determination is very low, thereby supporting that model does not explain variation in temp with variation in y.
+* Residual plots also do not show constant variance, there is increase in error
+* From the above Q-Q plot we can see that the residual distribution is also skewed indicating violation of assumption.
